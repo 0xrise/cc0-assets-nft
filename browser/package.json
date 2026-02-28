@@ -1,0 +1,24 @@
+{
+  "name": "cc0-asset-browser",
+  "version": "1.0.0",
+  "description": "3D Model Browser & Tagger for CC0 Assets",
+  "main": "model-browser.js",
+  "scripts": {
+    "start": "node model-browser.js",
+    "browser": "node model-browser.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  },
+  "keywords": [
+    "3d",
+    "models",
+    "cc0",
+    "nft",
+    "browser",
+    "glb",
+    "gltf"
+  ],
+  "author": "Ekza Space",
+  "license": "CC0-1.0"
+}

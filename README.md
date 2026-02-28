@@ -157,3 +157,23 @@ See [ATTRIBUTION.md](ATTRIBUTION.md) for complete legal information.
 ---
 
 Made with ❤️ by [Ekza Space](https://ekza.space)
+
+## 🖥️ Model Browser & Tagger
+
+Included web-based tool for browsing and tagging models:
+
+```bash
+cd browser
+npm install
+npm start
+# Opens http://localhost:3456
+```
+
+**Features:**
+- 3D preview with Three.js
+- Tag models: ✅ Approve / ❌ Reject / ⏭️ Skip
+- Export approved models list
+- Keyboard shortcuts (A/X/S/Arrows)
+
+See [browser/README.md](browser/README.md) for details.
+
