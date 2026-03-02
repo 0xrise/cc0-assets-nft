@@ -10,17 +10,23 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const app = express();
 const PORT = 3456;
 
-const ASSETS_DIR = path.join(os.homedir(), 'Assets', 'CC0_Assets');
-const TAGS_FILE = path.join(ASSETS_DIR, 'model-tags.json');
+// Use repository's models directory (relative to browser/ folder)
+const ASSETS_DIR = path.join(__dirname, '..', 'models');
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const TAGS_FILE = path.join(DATA_DIR, 'model-tags.json');
 
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 // Ensure tags file exists
 if (!fs.existsSync(TAGS_FILE)) {
@@ -75,29 +81,17 @@ app.get('/api/models', (req, res) => {
   const tags = loadTags();
   const models = [];
   
-  // Scan processed directory
-  const processedModels = scanModels('processed');
-  models.push(...processedModels.map(m => ({
-    ...m,
-    source: 'processed',
-    tag: tags[m.id] || 'pending'
-  })));
+  // Scan all model directories
+  const sources = ['kenney', 'quaternius', 'sketchfab'];
   
-  // Scan kenney directory
-  const kenneyModels = scanModels('kenney');
-  models.push(...kenneyModels.map(m => ({
-    ...m,
-    source: 'kenney',
-    tag: tags[m.id] || 'pending'
-  })));
-  
-  // Scan quaternius directory
-  const quaterniusModels = scanModels('quaternius');
-  models.push(...quaterniusModels.map(m => ({
-    ...m,
-    source: 'quaternius',
-    tag: tags[m.id] || 'pending'
-  })));
+  for (const source of sources) {
+    const sourceModels = scanModels(source);
+    models.push(...sourceModels.map(m => ({
+      ...m,
+      source: source,
+      tag: tags[m.id] || 'pending'
+    })));
+  }
   
   res.json(models);
 });
@@ -160,25 +154,28 @@ app.get('/api/export/approved', (req, res) => {
   res.json({
     approved: approvedIds,
     count: approvedIds.length,
-    exportPath: path.join(ASSETS_DIR, 'approved-models.json')
+    exportPath: path.join(DATA_DIR, 'approved-models.json')
   });
 });
 
 // API: Export approved models to file
 app.post('/api/export/approved', (req, res) => {
   const tags = loadTags();
-  const models = scanModels('processed')
-    .concat(scanModels('kenney'))
-    .concat(scanModels('quaternius'));
+  const sources = ['kenney', 'quaternius', 'sketchfab'];
+  let allModels = [];
   
-  const approvedModels = models
+  for (const source of sources) {
+    allModels = allModels.concat(scanModels(source));
+  }
+  
+  const approvedModels = allModels
     .filter(m => tags[m.id] === 'approved')
     .map(m => ({
       ...m,
       fullPath: path.join(ASSETS_DIR, m.path)
     }));
   
-  const exportPath = path.join(ASSETS_DIR, 'approved-models.json');
+  const exportPath = path.join(DATA_DIR, 'approved-models.json');
   fs.writeFileSync(exportPath, JSON.stringify(approvedModels, null, 2));
   
   res.json({
@@ -214,8 +211,6 @@ const indexHtml = `<!DOCTYPE html>
       display: flex;
       overflow: hidden;
     }
-    
-    /* Sidebar */
     .sidebar {
       width: 350px;
       background: #16213e;
@@ -223,47 +218,35 @@ const indexHtml = `<!DOCTYPE html>
       display: flex;
       flex-direction: column;
     }
-    
     .header {
       padding: 20px;
       border-bottom: 1px solid #0f3460;
     }
-    
     .header h1 {
       font-size: 18px;
       color: #e94560;
       margin-bottom: 10px;
     }
-    
     .stats {
       display: flex;
       gap: 15px;
       font-size: 12px;
     }
-    
-    .stat {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    
+    .stat { display: flex; align-items: center; gap: 5px; }
     .stat-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
     }
-    
     .stat-dot.approved { background: #4ade80; }
     .stat-dot.rejected { background: #f87171; }
     .stat-dot.pending { background: #fbbf24; }
-    
     .filters {
       padding: 15px 20px;
       display: flex;
       gap: 10px;
       border-bottom: 1px solid #0f3460;
     }
-    
     .filter-btn {
       padding: 6px 12px;
       border: none;
@@ -272,18 +255,14 @@ const indexHtml = `<!DOCTYPE html>
       color: #fff;
       font-size: 12px;
       cursor: pointer;
-      transition: all 0.2s;
     }
-    
     .filter-btn:hover { background: #1a4a7a; }
     .filter-btn.active { background: #e94560; }
-    
     .model-list {
       flex: 1;
       overflow-y: auto;
       padding: 10px;
     }
-    
     .model-item {
       display: flex;
       align-items: center;
@@ -293,24 +272,13 @@ const indexHtml = `<!DOCTYPE html>
       background: #1a1a2e;
       border-radius: 8px;
       cursor: pointer;
-      transition: all 0.2s;
       border: 2px solid transparent;
     }
-    
-    .model-item:hover {
-      background: #252540;
-      border-color: #0f3460;
-    }
-    
-    .model-item.selected {
-      border-color: #e94560;
-      background: #2a1f3d;
-    }
-    
+    .model-item:hover { background: #252540; border-color: #0f3460; }
+    .model-item.selected { border-color: #e94560; background: #2a1f3d; }
     .model-item.approved { border-left: 4px solid #4ade80; }
     .model-item.rejected { border-left: 4px solid #f87171; }
     .model-item.pending { border-left: 4px solid #fbbf24; }
-    
     .model-thumb {
       width: 50px;
       height: 50px;
@@ -321,12 +289,7 @@ const indexHtml = `<!DOCTYPE html>
       justify-content: center;
       font-size: 20px;
     }
-    
-    .model-info {
-      flex: 1;
-      min-width: 0;
-    }
-    
+    .model-info { flex: 1; min-width: 0; }
     .model-name {
       font-size: 13px;
       font-weight: 500;
@@ -334,13 +297,11 @@ const indexHtml = `<!DOCTYPE html>
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    
     .model-meta {
       font-size: 11px;
       color: #888;
       margin-top: 4px;
     }
-    
     .model-tag {
       padding: 4px 8px;
       border-radius: 4px;
@@ -348,29 +309,23 @@ const indexHtml = `<!DOCTYPE html>
       font-weight: 600;
       text-transform: uppercase;
     }
-    
     .model-tag.approved { background: #4ade8020; color: #4ade80; }
     .model-tag.rejected { background: #f8717120; color: #f87171; }
     .model-tag.pending { background: #fbbf2420; color: #fbbf24; }
-    
-    /* Main Viewer */
     .main {
       flex: 1;
       display: flex;
       flex-direction: column;
     }
-    
     .viewer-container {
       flex: 1;
       position: relative;
       background: #0a0a15;
     }
-    
     #canvas-container {
       width: 100%;
       height: 100%;
     }
-    
     .viewer-overlay {
       position: absolute;
       top: 20px;
@@ -381,30 +336,25 @@ const indexHtml = `<!DOCTYPE html>
       align-items: flex-start;
       pointer-events: none;
     }
-    
     .model-title {
       background: rgba(0,0,0,0.7);
       padding: 10px 20px;
       border-radius: 8px;
       backdrop-filter: blur(10px);
     }
-    
     .model-title h2 {
       font-size: 18px;
       margin-bottom: 4px;
     }
-    
     .model-title p {
       font-size: 12px;
       color: #888;
     }
-    
     .tag-actions {
       display: flex;
       gap: 10px;
       pointer-events: auto;
     }
-    
     .tag-btn {
       padding: 12px 24px;
       border: none;
@@ -413,31 +363,14 @@ const indexHtml = `<!DOCTYPE html>
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
-    
     .tag-btn:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
-    
-    .tag-btn.approve {
-      background: #4ade80;
-      color: #000;
-    }
-    
-    .tag-btn.reject {
-      background: #f87171;
-      color: #000;
-    }
-    
-    .tag-btn.skip {
-      background: #fbbf24;
-      color: #000;
-    }
-    
+    .tag-btn.approve { background: #4ade80; color: #000; }
+    .tag-btn.reject { background: #f87171; color: #000; }
+    .tag-btn.skip { background: #fbbf24; color: #000; }
     .toolbar {
       padding: 15px 20px;
       background: #16213e;
@@ -446,12 +379,7 @@ const indexHtml = `<!DOCTYPE html>
       justify-content: space-between;
       align-items: center;
     }
-    
-    .toolbar-left {
-      display: flex;
-      gap: 10px;
-    }
-    
+    .toolbar-left { display: flex; gap: 10px; }
     .toolbar-btn {
       padding: 10px 20px;
       border: none;
@@ -460,18 +388,11 @@ const indexHtml = `<!DOCTYPE html>
       color: #fff;
       font-size: 13px;
       cursor: pointer;
-      transition: all 0.2s;
     }
-    
     .toolbar-btn:hover { background: #1a4a7a; }
     .toolbar-btn.primary { background: #e94560; }
     .toolbar-btn.primary:hover { background: #ff5a7a; }
-    
-    .progress {
-      font-size: 13px;
-      color: #888;
-    }
-    
+    .progress { font-size: 13px; color: #888; }
     .empty-state {
       position: absolute;
       top: 50%;
@@ -480,12 +401,7 @@ const indexHtml = `<!DOCTYPE html>
       text-align: center;
       color: #666;
     }
-    
-    .empty-state h3 {
-      font-size: 24px;
-      margin-bottom: 10px;
-    }
-    
+    .empty-state h3 { font-size: 24px; margin-bottom: 10px; }
     .loading {
       position: absolute;
       top: 50%;
@@ -494,7 +410,6 @@ const indexHtml = `<!DOCTYPE html>
       font-size: 18px;
       color: #e94560;
     }
-    
     .keyboard-shortcuts {
       position: absolute;
       bottom: 20px;
@@ -505,19 +420,16 @@ const indexHtml = `<!DOCTYPE html>
       font-size: 11px;
       backdrop-filter: blur(10px);
     }
-    
     .keyboard-shortcuts h4 {
       margin-bottom: 8px;
       color: #e94560;
     }
-    
     .shortcut {
       display: flex;
       justify-content: space-between;
       gap: 20px;
       margin-bottom: 4px;
     }
-    
     kbd {
       background: #333;
       padding: 2px 6px;
@@ -569,15 +481,9 @@ const indexHtml = `<!DOCTYPE html>
         </div>
         
         <div class="tag-actions" id="tag-actions" style="display: none;">
-          <button class="tag-btn reject" onclick="tagCurrent('rejected')">
-            ❌ Reject
-          </button>
-          <button class="tag-btn skip" onclick="tagCurrent('pending')">
-            ⏭️ Skip
-          </button>
-          <button class="tag-btn approve" onclick="tagCurrent('approved')">
-            ✅ Approve
-          </button>
+          <button class="tag-btn reject" onclick="tagCurrent('rejected')">❌ Reject</button>
+          <button class="tag-btn skip" onclick="tagCurrent('pending')">⏭️ Skip</button>
+          <button class="tag-btn approve" onclick="tagCurrent('approved')">✅ Approve</button>
         </div>
       </div>
       
@@ -586,9 +492,7 @@ const indexHtml = `<!DOCTYPE html>
         <p>Select a model from the sidebar to start reviewing</p>
       </div>
       
-      <div class="loading" id="loading" style="display: none;">
-        Loading 3D model...
-      </div>
+      <div class="loading" id="loading" style="display: none;">Loading 3D model...</div>
       
       <div class="keyboard-shortcuts">
         <h4>Shortcuts</h4>
@@ -618,16 +522,13 @@ const indexHtml = `<!DOCTYPE html>
   </div>
 
   <script>
-    // Global state
     let models = [];
     let currentIndex = -1;
     let currentFilter = 'all';
     let scene, camera, renderer, controls, currentModel;
     
-    // Initialize Three.js
     function initViewer() {
       const container = document.getElementById('canvas-container');
-      
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0a0a15);
       
@@ -643,7 +544,6 @@ const indexHtml = `<!DOCTYPE html>
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
       
-      // Lighting
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
       scene.add(ambientLight);
       
@@ -656,12 +556,10 @@ const indexHtml = `<!DOCTYPE html>
       backLight.position.set(-5, 5, -5);
       scene.add(backLight);
       
-      // Grid
       const grid = new THREE.GridHelper(10, 10, 0x333333, 0x222222);
       scene.add(grid);
       
       animate();
-      
       window.addEventListener('resize', onWindowResize);
     }
     
@@ -678,51 +576,42 @@ const indexHtml = `<!DOCTYPE html>
       renderer.setSize(container.clientWidth, container.clientHeight);
     }
     
-    // Load model
     function loadModel(model) {
-      if (currentModel) {
-        scene.remove(currentModel);
-      }
+      if (currentModel) scene.remove(currentModel);
       
       document.getElementById('loading').style.display = 'block';
       document.getElementById('empty-state').style.display = 'none';
       
       const loader = new THREE.GLTFLoader();
-      loader.load(
-        '/api/model?path=' + encodeURIComponent(model.path),
-        (gltf) => {
-          currentModel = gltf.scene;
-          
-          // Center and scale
-          const box = new THREE.Box3().setFromObject(currentModel);
-          const center = box.getCenter(new THREE.Vector3());
-          const size = box.getSize(new THREE.Vector3());
-          
-          const maxDim = Math.max(size.x, size.y, size.z);
-          const scale = 2 / maxDim;
-          currentModel.scale.setScalar(scale);
-          
-          currentModel.position.sub(center.multiplyScalar(scale));
-          currentModel.position.y += size.y * scale / 2;
-          
-          scene.add(currentModel);
-          
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('model-title').style.display = 'block';
-          document.getElementById('tag-actions').style.display = 'flex';
-          
-          document.querySelector('#model-title h2').textContent = model.name;
-          document.querySelector('#model-title p').textContent = 
-            model.source + ' • ' + (model.size / 1024 / 1024).toFixed(2) + ' MB';
-          
-          resetView();
-        },
-        undefined,
-        (error) => {
-          console.error('Error loading model:', error);
-          document.getElementById('loading').textContent = 'Error loading model';
-        }
-      );
+      loader.load('/api/model?path=' + encodeURIComponent(model.path), (gltf) => {
+        currentModel = gltf.scene;
+        
+        const box = new THREE.Box3().setFromObject(currentModel);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = 2 / maxDim;
+        currentModel.scale.setScalar(scale);
+        
+        currentModel.position.sub(center.multiplyScalar(scale));
+        currentModel.position.y += size.y * scale / 2;
+        
+        scene.add(currentModel);
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('model-title').style.display = 'block';
+        document.getElementById('tag-actions').style.display = 'flex';
+        
+        document.querySelector('#model-title h2').textContent = model.name;
+        document.querySelector('#model-title p').textContent = 
+          model.source + ' • ' + (model.size / 1024 / 1024).toFixed(2) + ' MB';
+        
+        resetView();
+      }, undefined, (error) => {
+        console.error('Error loading model:', error);
+        document.getElementById('loading').textContent = 'Error loading model';
+      });
     }
     
     function resetView() {
@@ -731,10 +620,8 @@ const indexHtml = `<!DOCTYPE html>
       controls.reset();
     }
     
-    // Tag model
     async function tagCurrent(tag) {
       if (currentIndex < 0) return;
-      
       const model = models[currentIndex];
       model.tag = tag;
       
@@ -749,7 +636,6 @@ const indexHtml = `<!DOCTYPE html>
       nextModel();
     }
     
-    // Navigation
     function selectModel(index) {
       currentIndex = index;
       const model = models[index];
@@ -761,7 +647,6 @@ const indexHtml = `<!DOCTYPE html>
     function nextModel() {
       const filtered = getFilteredModels();
       const currentFilteredIndex = filtered.findIndex(m => m.id === models[currentIndex]?.id);
-      
       if (currentFilteredIndex < filtered.length - 1) {
         const nextModel = filtered[currentFilteredIndex + 1];
         const nextIndex = models.findIndex(m => m.id === nextModel.id);
@@ -772,7 +657,6 @@ const indexHtml = `<!DOCTYPE html>
     function prevModel() {
       const filtered = getFilteredModels();
       const currentFilteredIndex = filtered.findIndex(m => m.id === models[currentIndex]?.id);
-      
       if (currentFilteredIndex > 0) {
         const prevModel = filtered[currentFilteredIndex - 1];
         const prevIndex = models.findIndex(m => m.id === prevModel.id);
@@ -785,7 +669,6 @@ const indexHtml = `<!DOCTYPE html>
       return models.filter(m => m.tag === currentFilter);
     }
     
-    // UI Updates
     function updateModelList() {
       const list = document.getElementById('model-list');
       const filtered = getFilteredModels();
@@ -815,7 +698,6 @@ const indexHtml = `<!DOCTYPE html>
       document.getElementById('export-count').textContent = approved;
     }
     
-    // Filters
     document.querySelectorAll('.filter-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -825,10 +707,8 @@ const indexHtml = `<!DOCTYPE html>
       });
     });
     
-    // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT') return;
-      
       switch(e.key.toLowerCase()) {
         case 'a': tagCurrent('approved'); break;
         case 'x': tagCurrent('rejected'); break;
@@ -838,26 +718,20 @@ const indexHtml = `<!DOCTYPE html>
       }
     });
     
-    // Export
     async function exportApproved() {
       const res = await fetch('/api/export/approved', { method: 'POST' });
       const data = await res.json();
       alert(\`Exported \${data.count} approved models to:\n\${data.exportPath}\`);
     }
     
-    // Load models
     async function loadModels() {
       const res = await fetch('/api/models');
       models = await res.json();
       updateModelList();
       updateStats();
-      
-      if (models.length > 0) {
-        selectModel(0);
-      }
+      if (models.length > 0) selectModel(0);
     }
     
-    // Init
     initViewer();
     loadModels();
   </script>
@@ -866,17 +740,16 @@ const indexHtml = `<!DOCTYPE html>
 
 fs.writeFileSync(path.join(publicDir, 'index.html'), indexHtml);
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`
+  console.log(\`
 ╔══════════════════════════════════════════════════════════╗
 ║  🎨 CC0 Asset Browser & Tagger                           ║
 ╠══════════════════════════════════════════════════════════╣
 ║                                                          ║
-║  Server running at: http://localhost:${PORT}              ║
+║  Server running at: http://localhost:\${PORT}              ║
 ║                                                          ║
 ║  Features:                                               ║
-║  • Browse all GLB models in ~/Assets/CC0_Assets/        ║
+║  • Browse all GLB models in the repository              ║
 ║  • 3D preview with Three.js                             ║
 ║  • Tag: ✅ Approve / ❌ Reject / ⏭️ Skip                  ║
 ║  • Keyboard shortcuts (A/X/S/Arrows)                    ║
@@ -887,11 +760,5 @@ app.listen(PORT, () => {
 ║  ← = Previous  → = Next                                 ║
 ║                                                          ║
 ╚══════════════════════════════════════════════════════════╝
-  `);
-  
-  // Try to open browser
-  const { exec } = require('child_process');
-  const openCommand = process.platform === 'darwin' ? 'open' : 
-                      process.platform === 'win32' ? 'start' : 'xdg-open';
-  exec(`${openCommand} http://localhost:${PORT}`);
+  \`);
 });
